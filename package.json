@@ -11,6 +11,11 @@
     "lint": "eslint .",
     "format": "prettier --write ."
   },
+  "optionalDependencies": {
+    "@emnapi/core": "^1.11.1",
+    "@emnapi/runtime": "^1.11.1",
+    "lru-cache": "^11.5.1"
+  },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
     "@radix-ui/react-accordion": "^1.2.12",
