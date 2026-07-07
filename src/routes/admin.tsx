@@ -2,19 +2,21 @@ import { createFileRoute, Outlet, Link, useNavigate } from "@tanstack/react-rout
 import { useState, useEffect } from "react";
 import { Shield, Users, Settings, LogOut, Menu, X, LayoutDashboard, MessageCircle, Map, FileStack, User, Mail } from "lucide-react";
 import { toast } from "sonner";
+import { hasPermission, getUser as getStoredUser } from "../lib/permissions-helper";
 
 export const Route = createFileRoute("/admin")({
   component: AdminLayout,
 });
 
-const sidebarLinks = [
-  { to: "/admin", label: "نظرة عامة", icon: LayoutDashboard },
-  { to: "/admin/requests", label: "طلبات الخدمات", icon: FileStack },
-  { to: "/admin/messages", label: "الرسائل", icon: Mail },
-  { to: "/admin/regions", label: "إدارة المناطق", icon: Map },
-  { to: "/admin/users", label: "الأعضاء المسجلين", icon: Users },
-  { to: "/admin/whatsapp", label: "ربط واتساب", icon: MessageCircle },
-  { to: "/admin/profile", label: "حسابي", icon: User },
+const allSidebarLinks = [
+  { to: "/admin", label: "نظرة عامة", icon: LayoutDashboard, permission: null },
+  { to: "/admin/requests", label: "طلبات الخدمات", icon: FileStack, permission: 'requests.view' },
+  { to: "/admin/messages", label: "الرسائل", icon: Mail, permission: 'messages.view' },
+  { to: "/admin/regions", label: "إدارة المناطق", icon: Map, permission: 'regions.view' },
+  { to: "/admin/users", label: "الأعضاء المسجلين", icon: Users, permission: 'users.view' },
+  { to: "/admin/whatsapp", label: "ربط واتساب", icon: MessageCircle, permission: 'whatsapp.manage' },
+  { to: "/admin/roles", label: "إدارة الصلاحيات", icon: Shield, permission: '__ADMIN_ONLY__' },
+  { to: "/admin/profile", label: "حسابي", icon: User, permission: null },
 ];
 
 function AdminLayout() {
@@ -32,7 +34,7 @@ function AdminLayout() {
     try {
       const parsed = JSON.parse(userStr);
       setUser(parsed);
-      if (parsed.role !== 'ADMIN') {
+      if (!['ADMIN', 'BRANCH_MANAGER', 'EMPLOYEE'].includes(parsed.role)) {
         toast.error('غير مصرح لك بالدخول إلى هذه الصفحة');
         navigate({ to: '/' });
       } else {
@@ -99,7 +101,16 @@ function AdminLayout() {
           </div>
 
           <nav className="space-y-1.5">
-            {sidebarLinks.map((link) => {
+            {allSidebarLinks
+              .filter((link) => {
+                if (link.permission === null) return true;
+                if (link.permission === '__ADMIN_ONLY__') {
+                  const storedUser = getStoredUser();
+                  return storedUser?.role === 'ADMIN';
+                }
+                return hasPermission(link.permission);
+              })
+              .map((link) => {
               const Icon = link.icon;
               return (
                 <Link

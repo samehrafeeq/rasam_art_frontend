@@ -2,7 +2,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, useRef } from "react";
 import { fetchApi } from "@/lib/api";
 import { toast } from "sonner";
-import { Users, Phone, Mail, Calendar, Search, X, Edit, Trash2, ChevronRight, ChevronLeft } from "lucide-react";
+import { Users, Phone, Mail, Calendar, Search, X, Edit, Trash2, ChevronRight, ChevronLeft, MapPin, Plus } from "lucide-react";
+import { hasPermission, getRoleLabel, getUser, isBranchScoped } from "../../lib/permissions-helper";
 
 export const Route = createFileRoute("/admin/users")({
   head: () => ({
@@ -19,6 +20,8 @@ type User = {
   email: string;
   phone: string;
   role: string;
+  regionId?: number | null;
+  region?: { id: number; name: string } | null;
   createdAt: string;
 };
 
@@ -36,14 +39,34 @@ function AdminUsersPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [modalMode, setModalMode] = useState<'view' | 'edit'>('view');
+  const [modalMode, setModalMode] = useState<'view' | 'edit' | 'create'>('view');
   const [isUpdating, setIsUpdating] = useState(false);
+  
+  // For creating a new user
+  const [newUser, setNewUser] = useState({
+    name: '', email: '', phone: '', password: '', role: 'USER', regionId: ''
+  });
+
+  const [regions, setRegions] = useState<{id: number, name: string}[]>([]);
   const navigate = useNavigate();
   const searchTimeoutRef = useRef<NodeJS.Timeout>();
 
   useEffect(() => {
     loadUsers();
+    loadRegions();
   }, [currentPage]);
+
+  const loadRegions = async () => {
+    try {
+      const data = await fetchApi('/regions');
+      const user = getUser();
+      if (isBranchScoped() && user?.regionId) {
+        setRegions(data.filter((r: any) => r.id === user.regionId));
+      } else {
+        setRegions(data);
+      }
+    } catch {}
+  };
 
   // Debounced search
   useEffect(() => {
@@ -76,6 +99,11 @@ function AdminUsersPage() {
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (modalMode === 'create') {
+      await handleCreate();
+      return;
+    }
+    
     if (!selectedUser) return;
     
     setIsUpdating(true);
@@ -86,6 +114,7 @@ function AdminUsersPage() {
           name: selectedUser.name,
           phone: selectedUser.phone,
           role: selectedUser.role,
+          regionId: selectedUser.regionId ? Number(selectedUser.regionId) : null,
         })
       });
       
@@ -94,6 +123,28 @@ function AdminUsersPage() {
       setSelectedUser(null);
     } catch (err: any) {
       toast.error(err.message || "حدث خطأ أثناء التحديث");
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleCreate = async () => {
+    setIsUpdating(true);
+    try {
+      const createdUser = await fetchApi(`/users`, {
+        method: 'POST',
+        body: JSON.stringify({
+          ...newUser,
+          regionId: newUser.regionId ? Number(newUser.regionId) : null,
+        })
+      });
+      
+      setUsers([createdUser, ...users]);
+      toast.success("تم إضافة العضو بنجاح");
+      setModalMode('view');
+      setSelectedUser(null);
+    } catch (err: any) {
+      toast.error(err.message || "حدث خطأ أثناء الإضافة");
     } finally {
       setIsUpdating(false);
     }
@@ -130,6 +181,19 @@ function AdminUsersPage() {
             className="w-full sm:w-80 h-10 pl-4 pr-10 rounded-md border border-border bg-card text-sm focus:outline-none focus:ring-1 focus:ring-gold transition-shadow"
           />
         </div>
+        {hasPermission('users.create') && (
+          <button 
+            onClick={() => {
+              setNewUser({ name: '', email: '', phone: '', password: '', role: 'USER', regionId: '' });
+              setSelectedUser(null);
+              setModalMode('create');
+            }}
+            className="btn-primary w-full sm:w-auto mt-4 sm:mt-0 whitespace-nowrap"
+          >
+            <Plus className="size-4 mr-2 inline-block" />
+            إضافة عضو جديد
+          </button>
+        )}
       </div>
 
       <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
@@ -149,13 +213,19 @@ function AdminUsersPage() {
                       <div className="text-sm text-muted-foreground mt-0.5">ID: {user.id}</div>
                     </div>
                     <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${
-                      user.role === 'ADMIN' ? 'bg-gold/10 text-gold border border-gold/20' : 'bg-secondary text-muted-foreground border border-border'
+                      selectedUser?.role === 'ADMIN' ? 'bg-gold/10 text-gold border border-gold/20' : 'bg-secondary text-muted-foreground border border-border'
                     }`}>
-                      {user.role === 'ADMIN' ? 'مدير' : 'مستخدم'}
+                      {getRoleLabel(user.role)}
                     </span>
                   </div>
                   
                   <div className="space-y-2 bg-secondary/30 p-3 rounded-lg border border-border/50">
+                    {user.region && (
+                      <div className="flex items-center gap-3 text-sm text-foreground/90 mb-2">
+                        <MapPin className="size-4 text-gold" />
+                        <span>فرع: {user.region.name}</span>
+                      </div>
+                    )}
                     <div className="flex items-center gap-3 text-sm text-foreground/90">
                       <Phone className="size-4 text-muted-foreground" />
                       <span dir="ltr">{user.phone}</span>
@@ -174,13 +244,15 @@ function AdminUsersPage() {
                       <Users className="size-3.5" />
                       تفاصيل
                     </button>
-                    <button 
-                      onClick={() => { setSelectedUser(user); setModalMode('edit'); }}
-                      className="flex-1 h-9 text-xs font-semibold bg-secondary hover:bg-border transition-colors rounded-md flex items-center justify-center gap-2"
-                    >
-                      <Edit className="size-3.5" />
-                      تعديل
-                    </button>
+                    {hasPermission('users.edit') && (
+                      <button 
+                        onClick={() => { setSelectedUser(user); setModalMode('edit'); }}
+                        className="flex-1 h-9 text-xs font-semibold bg-secondary hover:bg-border transition-colors rounded-md flex items-center justify-center gap-2"
+                      >
+                        <Edit className="size-3.5" />
+                        تعديل
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -216,11 +288,19 @@ function AdminUsersPage() {
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${
-                          user.role === 'ADMIN' ? 'bg-gold/10 text-gold border border-gold/20' : 'bg-secondary text-muted-foreground border border-border'
-                        }`}>
-                          {user.role === 'ADMIN' ? 'مدير' : 'مستخدم'}
-                        </span>
+                        <div className="flex flex-col gap-1">
+                          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold w-fit ${
+                            user.role === 'ADMIN' ? 'bg-gold/10 text-gold border border-gold/20' : 'bg-secondary text-muted-foreground border border-border'
+                          }`}>
+                            {getRoleLabel(user.role)}
+                          </span>
+                          {user.region && (
+                            <span className="text-xs font-semibold text-muted-foreground flex items-center gap-1 mt-1">
+                              <MapPin className="size-3 text-gold/70" />
+                              {user.region.name}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2 text-muted-foreground">
@@ -237,13 +317,15 @@ function AdminUsersPage() {
                             <Users className="size-3" />
                             عرض
                           </button>
-                          <button 
-                            onClick={() => { setSelectedUser(user); setModalMode('edit'); }}
-                            className="text-xs btn-outline px-3 py-1.5 inline-flex items-center gap-1.5"
-                          >
-                            <Edit className="size-3" />
-                            تعديل
-                          </button>
+                          {hasPermission('users.edit') && (
+                            <button 
+                              onClick={() => { setSelectedUser(user); setModalMode('edit'); }}
+                              className="text-xs btn-outline px-3 py-1.5 inline-flex items-center gap-1.5"
+                            >
+                              <Edit className="size-3" />
+                              تعديل
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -294,28 +376,28 @@ function AdminUsersPage() {
       </div>
 
       {/* User Details & Edit Modal */}
-      {selectedUser && (
+      {(selectedUser || modalMode === 'create') && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-0">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setSelectedUser(null)} />
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => { setSelectedUser(null); setModalMode('view'); }} />
           <div className="relative bg-card w-full max-w-md rounded-2xl shadow-elegant border border-border overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="p-5 border-b border-border flex items-center justify-between bg-secondary/50">
               <h2 className="font-display font-bold text-lg flex items-center gap-2">
-                {modalMode === 'edit' ? <Edit className="size-5 text-gold" /> : <Users className="size-5 text-gold" />}
-                {modalMode === 'edit' ? 'تعديل بيانات العضو' : 'تفاصيل العضو'}
+                {modalMode === 'create' ? <Plus className="size-5 text-gold" /> : (modalMode === 'edit' ? <Edit className="size-5 text-gold" /> : <Users className="size-5 text-gold" />)}
+                {modalMode === 'create' ? 'إضافة عضو جديد' : (modalMode === 'edit' ? 'تعديل بيانات العضو' : 'تفاصيل العضو')}
               </h2>
-              <button onClick={() => setSelectedUser(null)} className="p-1.5 hover:bg-black/5 rounded-md transition-colors">
+              <button onClick={() => { setSelectedUser(null); setModalMode('view'); }} className="p-1.5 hover:bg-black/5 rounded-md transition-colors">
                 <X className="size-5" />
               </button>
             </div>
             
-            {modalMode === 'edit' ? (
+            {modalMode === 'edit' || modalMode === 'create' ? (
               <form onSubmit={handleUpdate} className="p-6 space-y-4">
                 <div>
                   <label className="block text-sm font-semibold mb-1.5">الاسم كامل</label>
                   <input 
                     type="text" 
-                    value={selectedUser.name}
-                    onChange={(e) => setSelectedUser({...selectedUser, name: e.target.value})}
+                    value={modalMode === 'create' ? newUser.name : selectedUser?.name}
+                    onChange={(e) => modalMode === 'create' ? setNewUser({...newUser, name: e.target.value}) : setSelectedUser({...selectedUser!, name: e.target.value})}
                     className="w-full h-10 px-3 rounded-md border border-border bg-background focus:outline-none focus:border-gold transition-colors"
                     required
                   />
@@ -325,19 +407,35 @@ function AdminUsersPage() {
                   <label className="block text-sm font-semibold mb-1.5">البريد الإلكتروني</label>
                   <input 
                     type="email" 
-                    value={selectedUser.email}
-                    disabled
-                    className="w-full h-10 px-3 rounded-md border border-border bg-secondary/50 text-muted-foreground focus:outline-none cursor-not-allowed"
+                    value={modalMode === 'create' ? newUser.email : selectedUser?.email}
+                    disabled={modalMode === 'edit'}
+                    onChange={(e) => modalMode === 'create' ? setNewUser({...newUser, email: e.target.value}) : undefined}
+                    className={`w-full h-10 px-3 rounded-md border border-border ${modalMode === 'edit' ? 'bg-secondary/50 text-muted-foreground cursor-not-allowed' : 'bg-background focus:border-gold'} focus:outline-none transition-colors`}
                     dir="ltr"
+                    required={modalMode === 'create'}
                   />
                 </div>
+
+                {modalMode === 'create' && (
+                  <div>
+                    <label className="block text-sm font-semibold mb-1.5">كلمة المرور</label>
+                    <input 
+                      type="password" 
+                      value={newUser.password}
+                      onChange={(e) => setNewUser({...newUser, password: e.target.value})}
+                      className="w-full h-10 px-3 rounded-md border border-border bg-background focus:outline-none focus:border-gold transition-colors text-right"
+                      dir="ltr"
+                      required
+                    />
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-sm font-semibold mb-1.5">رقم الهاتف</label>
                   <input 
                     type="text" 
-                    value={selectedUser.phone}
-                    onChange={(e) => setSelectedUser({...selectedUser, phone: e.target.value})}
+                    value={modalMode === 'create' ? newUser.phone : selectedUser?.phone}
+                    onChange={(e) => modalMode === 'create' ? setNewUser({...newUser, phone: e.target.value}) : setSelectedUser({...selectedUser!, phone: e.target.value})}
                     className="w-full h-10 px-3 rounded-md border border-border bg-background focus:outline-none focus:border-gold transition-colors text-right"
                     dir="ltr"
                     required
@@ -347,14 +445,33 @@ function AdminUsersPage() {
                 <div>
                   <label className="block text-sm font-semibold mb-1.5">الصلاحية (الدور)</label>
                   <select 
-                    value={selectedUser.role}
-                    onChange={(e) => setSelectedUser({...selectedUser, role: e.target.value})}
+                    value={modalMode === 'create' ? newUser.role : selectedUser?.role}
+                    onChange={(e) => modalMode === 'create' ? setNewUser({...newUser, role: e.target.value}) : setSelectedUser({...selectedUser!, role: e.target.value})}
                     className="w-full h-10 px-3 rounded-md border border-border bg-background focus:outline-none focus:border-gold transition-colors"
                   >
-                    <option value="USER">مستخدم عادي</option>
-                    <option value="ADMIN">مدير نظام</option>
+                    <option value="USER">عميل</option>
+                    <option value="EMPLOYEE">موظف</option>
+                    <option value="BRANCH_MANAGER">مدير فرع</option>
+                    <option value="ADMIN">مالك النظام</option>
                   </select>
                 </div>
+
+                {['EMPLOYEE', 'BRANCH_MANAGER'].includes(modalMode === 'create' ? newUser.role : (selectedUser?.role || '')) && (
+                  <div>
+                    <label className="block text-sm font-semibold mb-1.5">الفرع التابع له</label>
+                    <select 
+                      value={(modalMode === 'create' ? newUser.regionId : selectedUser?.regionId) || ''}
+                      onChange={(e) => modalMode === 'create' ? setNewUser({...newUser, regionId: e.target.value}) : setSelectedUser({...selectedUser!, regionId: e.target.value ? Number(e.target.value) : undefined})}
+                      className="w-full h-10 px-3 rounded-md border border-border bg-background focus:outline-none focus:border-gold transition-colors"
+                      required
+                    >
+                      <option value="" disabled>اختر الفرع...</option>
+                      {regions.map(r => (
+                        <option key={r.id} value={r.id}>{r.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 
                 <div className="pt-4 flex gap-3">
                   <button 
@@ -362,19 +479,21 @@ function AdminUsersPage() {
                     disabled={isUpdating}
                     className="flex-1 h-10 bg-gold text-black font-bold rounded-md shadow-md hover:bg-gold/90 transition-colors disabled:opacity-50"
                   >
-                    {isUpdating ? 'جاري الحفظ...' : 'حفظ التعديلات'}
+                    {isUpdating ? 'جاري الحفظ...' : (modalMode === 'create' ? 'إنشاء العضو' : 'حفظ التعديلات')}
                   </button>
-                  <button 
-                    type="button" 
-                    onClick={() => handleDelete(selectedUser.id)}
-                    className="h-10 px-4 border border-red-500/30 text-red-500 rounded-md hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center bg-red-500/5"
-                    title="حذف العضو"
-                  >
-                    <Trash2 className="size-4.5" />
-                  </button>
+                  {modalMode === 'edit' && hasPermission('users.delete') && selectedUser && (
+                    <button 
+                      type="button" 
+                      onClick={() => handleDelete(selectedUser.id)}
+                      className="h-10 px-4 border border-red-500/30 text-red-500 rounded-md hover:bg-red-500 hover:text-white transition-colors flex items-center justify-center bg-red-500/5"
+                      title="حذف العضو"
+                    >
+                      <Trash2 className="size-4.5" />
+                    </button>
+                  )}
                 </div>
               </form>
-            ) : (
+            ) : selectedUser && (
               <div className="p-6 space-y-6">
                 <div className="flex flex-col items-center justify-center text-center">
                   <div className="size-20 rounded-full bg-gold/10 border border-gold/30 flex items-center justify-center text-3xl font-black text-gold mb-4">
@@ -385,11 +504,17 @@ function AdminUsersPage() {
                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${
                       selectedUser.role === 'ADMIN' ? 'bg-gold/10 text-gold' : 'bg-secondary text-muted-foreground'
                     }`}>
-                      {selectedUser.role === 'ADMIN' ? 'مدير نظام' : 'مستخدم عادي'}
+                      {getRoleLabel(selectedUser.role)}
                     </span>
                     <span>•</span>
                     <span dir="ltr">ID: {selectedUser.id}</span>
                   </div>
+                  {selectedUser.region && (
+                    <div className="mt-2 text-sm font-semibold text-gold bg-gold/10 px-3 py-1 rounded-full border border-gold/20 flex items-center justify-center gap-1.5 mx-auto w-fit">
+                      <MapPin className="size-3.5" />
+                      {selectedUser.region.name}
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-3 bg-secondary/30 p-4 rounded-xl border border-border/50">
@@ -410,13 +535,15 @@ function AdminUsersPage() {
                   </div>
                 </div>
 
-                <button 
-                  onClick={() => setModalMode('edit')}
-                  className="w-full h-10 bg-secondary hover:bg-border text-foreground font-semibold rounded-md transition-colors flex items-center justify-center gap-2"
-                >
-                  <Edit className="size-4" />
-                  الانتقال لتعديل البيانات
-                </button>
+                {hasPermission('users.edit') && (
+                  <button 
+                    onClick={() => setModalMode('edit')}
+                    className="w-full h-10 bg-secondary hover:bg-border text-foreground font-semibold rounded-md transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Edit className="size-4" />
+                    الانتقال لتعديل البيانات
+                  </button>
+                )}
               </div>
             )}
           </div>

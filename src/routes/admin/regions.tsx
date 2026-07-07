@@ -1,34 +1,48 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
-import { api } from "../../lib/api";
-import { Plus, Edit, Trash2, MapPin, Phone, Settings2, X, Check } from "lucide-react";
+import { fetchApi } from "../../lib/api";
+import { Plus, Edit, Trash2, MapPin, Phone, Settings2, X, Check, Users } from "lucide-react";
 import { toast } from "sonner";
 import { SERVICES_DATA } from "../../lib/services-data";
+import { hasPermission, getUser, isBranchScoped } from "../../lib/permissions-helper";
 
 export const Route = createFileRoute("/admin/regions")({
   component: AdminRegionsPage,
 });
 
+type Region = {
+  id: number;
+  name: string;
+  description: string;
+  phoneNumbers: string;
+  disabledServiceIds: number[];
+};
+
 function AdminRegionsPage() {
-  const [regions, setRegions] = useState<any[]>([]);
+  const [regions, setRegions] = useState<Region[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingRegion, setEditingRegion] = useState<any | null>(null);
+  const [editingRegion, setEditingRegion] = useState<Region | null>(null);
   
   const [formData, setFormData] = useState<{name: string, description: string, phoneNumbers: string[]}>({ name: '', description: '', phoneNumbers: [''] });
   const [managingServicesRegion, setManagingServicesRegion] = useState<any | null>(null);
   const [disabledServices, setDisabledServices] = useState<number[]>([]);
 
   useEffect(() => {
-    fetchRegions();
+    loadRegions();
   }, []);
 
-  const fetchRegions = async () => {
+  const loadRegions = async () => {
     try {
-      const res = await api.get('/regions');
-      setRegions(res.data);
-    } catch (error) {
-      toast.error('حدث خطأ أثناء تحميل المناطق');
+      const data = await fetchApi('/regions');
+      const user = getUser();
+      if (isBranchScoped() && user?.regionId) {
+        setRegions(data.filter((r: Region) => r.id === user.regionId));
+      } else {
+        setRegions(data);
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'حدث خطأ أثناء تحميل المناطق');
     } finally {
       setLoading(false);
     }
@@ -43,14 +57,14 @@ function AdminRegionsPage() {
       };
       
       if (editingRegion) {
-        await api.put(`/regions/${editingRegion.id}`, payload);
+        await fetchApi(`/regions/${editingRegion.id}`, { method: 'PUT', body: JSON.stringify(payload) });
         toast.success('تم تحديث المنطقة بنجاح');
       } else {
-        await api.post('/regions', payload);
+        await fetchApi('/regions', { method: 'POST', body: JSON.stringify(payload) });
         toast.success('تم إضافة المنطقة بنجاح');
       }
       setIsModalOpen(false);
-      fetchRegions();
+      loadRegions();
     } catch {
       toast.error('حدث خطأ أثناء الحفظ');
     }
@@ -59,9 +73,9 @@ function AdminRegionsPage() {
   const handleDelete = async (id: number) => {
     if (!confirm('هل أنت متأكد من حذف هذه المنطقة؟')) return;
     try {
-      await api.delete(`/regions/${id}`);
+      await fetchApi(`/regions/${id}`, { method: 'DELETE' });
       toast.success('تم حذف المنطقة');
-      fetchRegions();
+      loadRegions();
     } catch {
       toast.error('حدث خطأ أثناء الحذف');
     }
@@ -96,17 +110,19 @@ function AdminRegionsPage() {
           <h1 className="text-2xl font-bold font-display text-foreground">إدارة المناطق</h1>
           <p className="text-muted-foreground text-sm mt-1">أضف مناطق عملك وتحكم بالخدمات المتاحة في كل منطقة</p>
         </div>
-        <button 
-          onClick={() => {
-            setEditingRegion(null);
-            setFormData({ name: '', description: '', phoneNumbers: [''] });
-            setIsModalOpen(true);
-          }}
-          className="btn-primary"
-        >
-          <Plus className="size-4 mr-2" />
-          إضافة منطقة
-        </button>
+        {hasPermission('regions.create') && (
+          <button 
+            onClick={() => {
+              setEditingRegion(null);
+              setFormData({ name: '', description: '', phoneNumbers: [''] });
+              setIsModalOpen(true);
+            }}
+            className="btn-primary"
+          >
+            <Plus className="size-4 mr-2" />
+            إضافة منطقة
+          </button>
+        )}
       </div>
 
       {loading ? (
@@ -125,16 +141,20 @@ function AdminRegionsPage() {
                   <h3 className="font-bold text-lg">{region.name}</h3>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => { 
-                    setEditingRegion(region); 
-                    setFormData({ 
-                      name: region.name, 
-                      description: region.description || '', 
-                      phoneNumbers: region.phoneNumbers ? region.phoneNumbers.split(',').map((p: string) => p.trim()) : [''] 
-                    }); 
-                    setIsModalOpen(true); 
-                  }} className="p-1.5 text-muted-foreground hover:text-primary transition-colors bg-secondary rounded-md"><Edit className="size-4" /></button>
-                  <button onClick={() => handleDelete(region.id)} className="p-1.5 text-muted-foreground hover:text-red-500 transition-colors bg-secondary rounded-md"><Trash2 className="size-4" /></button>
+                  {hasPermission('regions.edit') && (
+                    <button onClick={() => { 
+                      setEditingRegion(region); 
+                      setFormData({ 
+                        name: region.name, 
+                        description: region.description || '', 
+                        phoneNumbers: region.phoneNumbers ? region.phoneNumbers.split(',').map((p: string) => p.trim()) : [''] 
+                      }); 
+                      setIsModalOpen(true); 
+                    }} className="p-1.5 text-muted-foreground hover:text-primary transition-colors bg-secondary rounded-md"><Edit className="size-4" /></button>
+                  )}
+                  {hasPermission('regions.delete') && (
+                    <button onClick={() => handleDelete(region.id)} className="p-1.5 text-muted-foreground hover:text-red-500 transition-colors bg-secondary rounded-md"><Trash2 className="size-4" /></button>
+                  )}
                 </div>
               </div>
 

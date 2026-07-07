@@ -1,8 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { api } from "../../lib/api";
-import { Users, FileText, Activity, Clock, MapPin, CheckCircle, XCircle, ArrowLeft } from "lucide-react";
+import { Users, FileText, Activity, Clock, MapPin, CheckCircle, XCircle, ArrowLeft, AlertCircle } from "lucide-react";
 import { SERVICES_DATA } from "../../lib/services-data";
+import { hasPermission, getUser, isBranchScoped } from "../../lib/permissions-helper";
 
 export const Route = createFileRoute("/admin/")({
   head: () => ({
@@ -20,7 +21,8 @@ function AdminOverviewPage() {
     pendingRequests: 0,
     acceptedRequests: 0,
     whatsappStatus: 'DISCONNECTED',
-    whatsappPhone: null as string | null
+    whatsappPhone: null as string | null,
+    pendingRejections: 0,
   });
   const [recentRequests, setRecentRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,20 +33,31 @@ function AdminOverviewPage() {
 
   const fetchDashboardData = async () => {
     try {
-      const [usersRes, requestsRes, whatsappRes] = await Promise.all([
-        api.get('/users'),
-        api.get('/requests'),
-        api.get('/whatsapp/status').catch(() => ({ data: { status: 'DISCONNECTED' } }))
-      ]);
+      const user = getUser();
+      let usersUrl = '/users';
+      let requestsUrl = '/requests';
+      
+      if (isBranchScoped() && user?.regionId) {
+        requestsUrl = `/requests?regionId=${user.regionId}`;
+      }
+
+      const promises: Promise<any>[] = [];
+      
+      const pUsers = hasPermission('users.view') ? api.get(usersUrl) : Promise.resolve({ data: [] });
+      const pRequests = hasPermission('requests.view') ? api.get(requestsUrl) : Promise.resolve({ data: [] });
+      const pWhatsapp = hasPermission('whatsapp.manage') ? api.get('/whatsapp/status').catch(() => ({ data: { status: 'DISCONNECTED' } })) : Promise.resolve({ data: { status: 'DISCONNECTED' } });
+
+      const [usersRes, requestsRes, whatsappRes] = await Promise.all([pUsers, pRequests, pWhatsapp]);
 
       const users = usersRes.data;
       const requests = requestsRes.data;
 
       setStats({
-        totalUsers: users.length,
+        totalUsers: Array.isArray(users) ? users.length : users?.data?.length || 0,
         totalRequests: requests.length,
         pendingRequests: requests.filter((r: any) => r.status === 'PENDING').length,
         acceptedRequests: requests.filter((r: any) => r.status === 'ACCEPTED').length,
+        pendingRejections: requests.filter((r: any) => r.status === 'PENDING_REJECTION').length,
         whatsappStatus: whatsappRes.data.status,
         whatsappPhone: whatsappRes.data.phoneNumber
       });
@@ -60,6 +73,7 @@ function AdminOverviewPage() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'PENDING': return <span className="bg-yellow-500/10 text-yellow-600 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 w-fit"><Clock className="size-3"/> قيد المراجعة</span>;
+      case 'PENDING_REJECTION': return <span className="bg-orange-500/10 text-orange-600 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 w-fit"><AlertCircle className="size-3"/> طلب رفض</span>;
       case 'ACCEPTED': return <span className="bg-green-500/10 text-green-600 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 w-fit"><CheckCircle className="size-3"/> مقبول</span>;
       case 'REJECTED': return <span className="bg-red-500/10 text-red-600 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 w-fit"><XCircle className="size-3"/> مرفوض</span>;
       default: return null;
@@ -86,24 +100,33 @@ function AdminOverviewPage() {
         <div className="flex justify-center py-12"><div className="size-8 border-4 border-gold border-t-transparent rounded-full animate-spin"></div></div>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-          <StatCard icon={Users} label="إجمالي الأعضاء" value={stats.totalUsers} color="text-primary" bg="bg-primary/10" />
-          <StatCard icon={FileText} label="إجمالي الطلبات" value={stats.totalRequests} color="text-gold" bg="bg-gold/10" />
-          <StatCard icon={Clock} label="طلبات قيد المراجعة" value={stats.pendingRequests} color="text-yellow-600" bg="bg-yellow-500/10" />
-          <StatCard icon={CheckCircle} label="طلبات مقبولة" value={stats.acceptedRequests} color="text-green-600" bg="bg-green-500/10" />
+          {hasPermission('users.view') && <StatCard icon={Users} label="إجمالي الأعضاء" value={stats.totalUsers} color="text-primary" bg="bg-primary/10" />}
+          {hasPermission('requests.view') && (
+            <>
+              <StatCard icon={FileText} label="إجمالي الطلبات" value={stats.totalRequests} color="text-gold" bg="bg-gold/10" />
+              <StatCard icon={Clock} label="طلبات قيد المراجعة" value={stats.pendingRequests} color="text-yellow-600" bg="bg-yellow-500/10" />
+              <StatCard icon={CheckCircle} label="طلبات مقبولة" value={stats.acceptedRequests} color="text-green-600" bg="bg-green-500/10" />
+            </>
+          )}
+          {hasPermission('requests.review_rejection') && (
+             <StatCard icon={AlertCircle} label="طلبات رفض معلقة" value={stats.pendingRejections} color="text-orange-600" bg="bg-orange-500/10" />
+          )}
           
-          <Link to="/admin/whatsapp" className="bg-card border border-border rounded-2xl p-6 shadow-sm hover:-translate-y-1 hover:shadow-md transition-all flex flex-col justify-between">
-            <div className="flex justify-between items-start mb-4">
-              <div className={`size-12 rounded-xl flex items-center justify-center ${stats.whatsappStatus === 'CONNECTED' ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-600'}`}>
-                {stats.whatsappStatus === 'CONNECTED' ? <CheckCircle className="size-6" /> : <XCircle className="size-6" />}
+          {hasPermission('whatsapp.manage') && (
+            <Link to="/admin/whatsapp" className="bg-card border border-border rounded-2xl p-6 shadow-sm hover:-translate-y-1 hover:shadow-md transition-all flex flex-col justify-between">
+              <div className="flex justify-between items-start mb-4">
+                <div className={`size-12 rounded-xl flex items-center justify-center ${stats.whatsappStatus === 'CONNECTED' ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-600'}`}>
+                  {stats.whatsappStatus === 'CONNECTED' ? <CheckCircle className="size-6" /> : <XCircle className="size-6" />}
+                </div>
               </div>
-            </div>
-            <div>
-              <div className="text-sm font-bold text-muted-foreground mb-1">حالة الواتساب</div>
-              <div className={`font-display text-lg font-black ${stats.whatsappStatus === 'CONNECTED' ? 'text-green-600' : 'text-red-600'}`}>
-                {stats.whatsappStatus === 'CONNECTED' ? (stats.whatsappPhone ? `+${stats.whatsappPhone}` : 'متصل') : 'غير متصل'}
+              <div>
+                <div className="text-sm font-bold text-muted-foreground mb-1">حالة الواتساب</div>
+                <div className={`font-display text-lg font-black ${stats.whatsappStatus === 'CONNECTED' ? 'text-green-600' : 'text-red-600'}`}>
+                  {stats.whatsappStatus === 'CONNECTED' ? (stats.whatsappPhone ? `+${stats.whatsappPhone}` : 'متصل') : 'غير متصل'}
+                </div>
               </div>
-            </div>
-          </Link>
+            </Link>
+          )}
         </div>
       )}
 

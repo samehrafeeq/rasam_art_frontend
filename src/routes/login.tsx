@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { Lock, Mail, Phone, KeyRound, ArrowRight, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { fetchApi, api } from "@/lib/api";
+import { ADMIN_PANEL_ROLES } from "@/lib/permissions-helper";
 import heroImg from "@/assets/hero-villa.jpg";
 
 export const Route = createFileRoute("/login")({
@@ -18,7 +19,7 @@ export const Route = createFileRoute("/login")({
       if (userStr) {
         try {
           const user = JSON.parse(userStr);
-          if (user.role === 'ADMIN') throw redirect({ to: '/admin' });
+          if (ADMIN_PANEL_ROLES.includes(user.role)) throw redirect({ to: '/admin' });
           throw redirect({ to: '/dashboard' });
         } catch (err) {
           if (err instanceof Error && err.name === 'RedirectError') throw err;
@@ -70,12 +71,22 @@ function LoginPage() {
       });
       
       localStorage.setItem('token', data.access_token);
-      localStorage.setItem('user', JSON.stringify(data.user));
+
+      // Fetch user permissions after login
+      let permissions: string[] = [];
+      try {
+        const permsData = await fetchApi('/permissions/my');
+        permissions = permsData.permissions || [];
+      } catch {
+        // If permissions fetch fails, continue with empty permissions
+      }
+
+      localStorage.setItem('user', JSON.stringify({ ...data.user, permissions }));
       window.dispatchEvent(new Event('auth-change'));
       
       toast.success("تم تسجيل الدخول بنجاح");
       
-      if (data.user.role === 'ADMIN') {
+      if (ADMIN_PANEL_ROLES.includes(data.user.role)) {
         navigate({ to: '/admin' });
       } else {
         navigate({ to: '/' });

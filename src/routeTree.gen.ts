@@ -25,6 +25,7 @@ import { Route as DashboardRequestsRouteImport } from './routes/dashboard/reques
 import { Route as DashboardProfileRouteImport } from './routes/dashboard/profile'
 import { Route as AdminWhatsappRouteImport } from './routes/admin/whatsapp'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
+import { Route as AdminRolesRouteImport } from './routes/admin/roles'
 import { Route as AdminRequestsRouteImport } from './routes/admin/requests'
 import { Route as AdminRegionsRouteImport } from './routes/admin/regions'
 import { Route as AdminProfileRouteImport } from './routes/admin/profile'
@@ -110,6 +111,11 @@ const AdminUsersRoute = AdminUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminRolesRoute = AdminRolesRouteImport.update({
+  id: '/roles',
+  path: '/roles',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminRequestsRoute = AdminRequestsRouteImport.update({
   id: '/requests',
   path: '/requests',
@@ -145,6 +151,7 @@ export interface FileRoutesByFullPath {
   '/admin/profile': typeof AdminProfileRoute
   '/admin/regions': typeof AdminRegionsRoute
   '/admin/requests': typeof AdminRequestsRoute
+  '/admin/roles': typeof AdminRolesRoute
   '/admin/users': typeof AdminUsersRoute
   '/admin/whatsapp': typeof AdminWhatsappRoute
   '/dashboard/profile': typeof DashboardProfileRoute
@@ -165,6 +172,7 @@ export interface FileRoutesByTo {
   '/admin/profile': typeof AdminProfileRoute
   '/admin/regions': typeof AdminRegionsRoute
   '/admin/requests': typeof AdminRequestsRoute
+  '/admin/roles': typeof AdminRolesRoute
   '/admin/users': typeof AdminUsersRoute
   '/admin/whatsapp': typeof AdminWhatsappRoute
   '/dashboard/profile': typeof DashboardProfileRoute
@@ -188,6 +196,7 @@ export interface FileRoutesById {
   '/admin/profile': typeof AdminProfileRoute
   '/admin/regions': typeof AdminRegionsRoute
   '/admin/requests': typeof AdminRequestsRoute
+  '/admin/roles': typeof AdminRolesRoute
   '/admin/users': typeof AdminUsersRoute
   '/admin/whatsapp': typeof AdminWhatsappRoute
   '/dashboard/profile': typeof DashboardProfileRoute
@@ -212,6 +221,7 @@ export interface FileRouteTypes {
     | '/admin/profile'
     | '/admin/regions'
     | '/admin/requests'
+    | '/admin/roles'
     | '/admin/users'
     | '/admin/whatsapp'
     | '/dashboard/profile'
@@ -232,6 +242,7 @@ export interface FileRouteTypes {
     | '/admin/profile'
     | '/admin/regions'
     | '/admin/requests'
+    | '/admin/roles'
     | '/admin/users'
     | '/admin/whatsapp'
     | '/dashboard/profile'
@@ -254,6 +265,7 @@ export interface FileRouteTypes {
     | '/admin/profile'
     | '/admin/regions'
     | '/admin/requests'
+    | '/admin/roles'
     | '/admin/users'
     | '/admin/whatsapp'
     | '/dashboard/profile'
@@ -389,6 +401,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminUsersRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/roles': {
+      id: '/admin/roles'
+      path: '/roles'
+      fullPath: '/admin/roles'
+      preLoaderRoute: typeof AdminRolesRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/requests': {
       id: '/admin/requests'
       path: '/requests'
@@ -425,6 +444,7 @@ interface AdminRouteChildren {
   AdminProfileRoute: typeof AdminProfileRoute
   AdminRegionsRoute: typeof AdminRegionsRoute
   AdminRequestsRoute: typeof AdminRequestsRoute
+  AdminRolesRoute: typeof AdminRolesRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminWhatsappRoute: typeof AdminWhatsappRoute
   AdminIndexRoute: typeof AdminIndexRoute
@@ -435,6 +455,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminProfileRoute: AdminProfileRoute,
   AdminRegionsRoute: AdminRegionsRoute,
   AdminRequestsRoute: AdminRequestsRoute,
+  AdminRolesRoute: AdminRolesRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminWhatsappRoute: AdminWhatsappRoute,
   AdminIndexRoute: AdminIndexRoute,

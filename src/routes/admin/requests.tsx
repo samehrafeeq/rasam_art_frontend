@@ -1,9 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { api } from "../../lib/api";
-import { Search, Filter, CheckCircle, XCircle, Clock, MapPin, User, FileText, Check, X } from "lucide-react";
+import { Search, Filter, CheckCircle, XCircle, Clock, MapPin, User, FileText, Check, X, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { SERVICES_DATA } from "../../lib/services-data";
+import { getUser, hasPermission } from "../../lib/permissions-helper";
 
 export const Route = createFileRoute("/admin/requests")({
   component: AdminRequestsPage,
@@ -52,6 +53,7 @@ function AdminRequestsPage() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'PENDING': return <span className="bg-yellow-500/10 text-yellow-600 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 w-fit"><Clock className="size-3"/> قيد المراجعة</span>;
+      case 'PENDING_REJECTION': return <span className="bg-orange-500/10 text-orange-600 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 w-fit"><AlertCircle className="size-3"/> بانتظار مراجعة الرفض</span>;
       case 'ACCEPTED': return <span className="bg-green-500/10 text-green-600 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 w-fit"><CheckCircle className="size-3"/> مقبول</span>;
       case 'REJECTED': return <span className="bg-red-500/10 text-red-600 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 w-fit"><XCircle className="size-3"/> مرفوض</span>;
       default: return null;
@@ -82,7 +84,7 @@ function AdminRequestsPage() {
         </div>
         
         <div className="flex items-center gap-1.5 w-full md:w-auto overflow-x-auto pb-1 md:pb-0 scrollbar-hide">
-          {['ALL', 'PENDING', 'ACCEPTED', 'REJECTED'].map(status => (
+          {['ALL', 'PENDING', 'PENDING_REJECTION', 'ACCEPTED', 'REJECTED'].map(status => (
             <button
               key={status}
               onClick={() => setFilterStatus(status)}
@@ -92,7 +94,7 @@ function AdminRequestsPage() {
                   : 'bg-secondary/50 text-muted-foreground hover:bg-secondary'
               }`}
             >
-              {status === 'ALL' ? 'الكل' : status === 'PENDING' ? 'قيد المراجعة' : status === 'ACCEPTED' ? 'المقبولة' : 'المرفوضة'}
+              {status === 'ALL' ? 'الكل' : status === 'PENDING' ? 'قيد المراجعة' : status === 'PENDING_REJECTION' ? 'بانتظار مراجعة الرفض' : status === 'ACCEPTED' ? 'المقبولة' : 'المرفوضة'}
             </button>
           ))}
         </div>
@@ -208,23 +210,68 @@ function AdminRequestsPage() {
                       <p className="text-sm text-red-700">{selectedRequest.rejectReason}</p>
                     </div>
                   )}
+                  {selectedRequest.status === 'PENDING_REJECTION' && (
+                    <div className="bg-orange-500/10 border border-orange-500/20 p-3 rounded-lg">
+                      <p className="text-xs text-orange-600 mb-1 font-bold">سبب طلب الرفض المقترح:</p>
+                      <p className="text-sm text-orange-700">{selectedRequest.rejectionRequestReason || 'لم يتم تحديد سبب'}</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
 
             {selectedRequest.status === 'PENDING' && (
               <div className="p-6 border-t border-border bg-secondary/10 flex gap-3 sticky bottom-0">
+                {hasPermission('requests.accept') && (
+                  <button 
+                    onClick={() => handleUpdateStatus(selectedRequest.id, 'ACCEPTED')}
+                    className="flex-1 bg-primary text-primary-foreground py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors shadow-lg shadow-gold/20"
+                  >
+                    <Check className="size-5" /> قبول الطلب
+                  </button>
+                )}
+                
+                {getUser()?.role === 'EMPLOYEE' ? (
+                  <button 
+                    onClick={() => setShowRejectModal(true)}
+                    className="flex-1 bg-orange-500 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-orange-600 transition-colors shadow-lg shadow-orange-500/20"
+                  >
+                    <AlertCircle className="size-5" /> طلب رفض
+                  </button>
+                ) : hasPermission('requests.reject') && (
+                  <button 
+                    onClick={() => setShowRejectModal(true)}
+                    className="flex-1 bg-red-500 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20"
+                  >
+                    <X className="size-5" /> رفض الطلب
+                  </button>
+                )}
+              </div>
+            )}
+            
+            {selectedRequest.status === 'PENDING_REJECTION' && hasPermission('requests.review_rejection') && (
+              <div className="p-6 border-t border-border bg-secondary/10 flex gap-3 sticky bottom-0">
                 <button 
-                  onClick={() => handleUpdateStatus(selectedRequest.id, 'ACCEPTED')}
-                  className="flex-1 bg-primary text-primary-foreground py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-primary/90 transition-colors shadow-lg shadow-gold/20"
+                  onClick={async () => {
+                    await api.patch(`/requests/${selectedRequest.id}/review-rejection`, { approved: true });
+                    toast.success('تمت الموافقة على الرفض');
+                    setSelectedRequest(null);
+                    fetchRequests();
+                  }}
+                  className="flex-1 bg-red-500 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-red-600 transition-colors shadow-lg shadow-red-500/20"
                 >
-                  <Check className="size-5" /> قبول الطلب
+                  <X className="size-5" /> موافقة على الرفض
                 </button>
                 <button 
-                  onClick={() => setShowRejectModal(true)}
-                  className="flex-1 bg-red-500 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-red-600 transition-colors"
+                  onClick={async () => {
+                    await api.patch(`/requests/${selectedRequest.id}/review-rejection`, { approved: false });
+                    toast.success('تم إعادة الطلب للمراجعة');
+                    setSelectedRequest(null);
+                    fetchRequests();
+                  }}
+                  className="flex-1 bg-secondary border border-border text-foreground py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-secondary/80 transition-colors"
                 >
-                  <X className="size-5" /> رفض الطلب
+                  <Clock className="size-5" /> إعادة للمراجعة
                 </button>
               </div>
             )}
@@ -238,11 +285,12 @@ function AdminRequestsPage() {
           <div className="bg-card rounded-2xl w-full max-w-md overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="p-6 border-b border-border bg-red-500/5">
               <h2 className="text-xl font-bold text-red-600 flex items-center gap-2">
-                <XCircle className="size-6" /> تأكيد الرفض
+                {getUser()?.role === 'EMPLOYEE' ? <AlertCircle className="size-6" /> : <XCircle className="size-6" />} 
+                {getUser()?.role === 'EMPLOYEE' ? 'تأكيد طلب الرفض' : 'تأكيد الرفض'}
               </h2>
             </div>
             <div className="p-6 space-y-4">
-              <p className="text-sm text-muted-foreground">هل أنت متأكد من رفض طلب <span className="font-bold text-foreground">"{getServiceName(selectedRequest.serviceId)}"</span> للعميل <span className="font-bold text-foreground">{selectedRequest.user.name}</span>؟</p>
+              <p className="text-sm text-muted-foreground">هل أنت متأكد من {getUser()?.role === 'EMPLOYEE' ? 'طلب رفض' : 'رفض'} <span className="font-bold text-foreground">"{getServiceName(selectedRequest.serviceId)}"</span> للعميل <span className="font-bold text-foreground">{selectedRequest.user.name}</span>؟</p>
               <div>
                 <label className="block text-sm font-semibold mb-2">سبب الرفض (اختياري - سيظهر للعميل)</label>
                 <textarea 
@@ -255,10 +303,21 @@ function AdminRequestsPage() {
             </div>
             <div className="p-6 pt-0 flex gap-3">
               <button 
-                onClick={() => handleUpdateStatus(selectedRequest.id, 'REJECTED', rejectReason)}
+                onClick={async () => {
+                  if (getUser()?.role === 'EMPLOYEE') {
+                    await api.patch(`/requests/${selectedRequest.id}/request-rejection`, { reason: rejectReason });
+                    toast.success('تم تقديم طلب الرفض بنجاح');
+                    setShowRejectModal(false);
+                    setSelectedRequest(null);
+                    setRejectReason('');
+                    fetchRequests();
+                  } else {
+                    handleUpdateStatus(selectedRequest.id, 'REJECTED', rejectReason);
+                  }
+                }}
                 className="flex-1 bg-red-500 text-white py-2.5 rounded-xl font-bold hover:bg-red-600 transition-colors"
               >
-                تأكيد الرفض
+                {getUser()?.role === 'EMPLOYEE' ? 'تأكيد طلب الرفض' : 'تأكيد الرفض'}
               </button>
               <button 
                 onClick={() => { setShowRejectModal(false); setRejectReason(''); }}
