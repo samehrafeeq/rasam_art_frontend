@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, useRef } from "react";
 import { fetchApi } from "@/lib/api";
 import { toast } from "sonner";
-import { Users, Phone, Mail, Calendar, Search, X, Edit, Trash2, ChevronRight, ChevronLeft, MapPin, Plus } from "lucide-react";
+import { Users, Phone, Mail, Calendar, Search, X, Edit, Trash2, ChevronRight, ChevronLeft, MapPin, Plus, Shield, Check, Loader2, RefreshCcw } from "lucide-react";
 import { hasPermission, getRoleLabel, getUser, isBranchScoped } from "../../lib/permissions-helper";
 
 export const Route = createFileRoute("/admin/users")({
@@ -39,8 +39,12 @@ function AdminUsersPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [modalMode, setModalMode] = useState<'view' | 'edit' | 'create'>('view');
+  const [modalMode, setModalMode] = useState<'view' | 'edit' | 'create' | 'permissions'>('view');
   const [isUpdating, setIsUpdating] = useState(false);
+  const [userPermissions, setUserPermissions] = useState<any[]>([]);
+  const [togglingPermission, setTogglingPermission] = useState<string | null>(null);
+  
+  const currentUser = getUser();
   
   // For creating a new user
   const [newUser, setNewUser] = useState({
@@ -163,6 +167,55 @@ function AdminUsersPage() {
     }
   };
 
+  const openPermissionsModal = async (user: User) => {
+    setSelectedUser(user);
+    setModalMode('permissions');
+    setIsUpdating(true);
+    setUserPermissions([]);
+    try {
+      const data = await fetchApi(`/permissions/users/${user.id}`);
+      setUserPermissions(data.permissions);
+    } catch (err: any) {
+      toast.error("حدث خطأ أثناء جلب الصلاحيات");
+      setModalMode('view');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const toggleUserPermission = async (permission: string, granted: boolean) => {
+    if (!selectedUser) return;
+    setTogglingPermission(permission);
+    try {
+      const data = await fetchApi(`/permissions/users/${selectedUser.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ updates: [{ permission, granted }] })
+      });
+      setUserPermissions(data.permissions);
+      toast.success("تم تحديث الصلاحية بنجاح");
+    } catch (err: any) {
+      toast.error(err.message || "حدث خطأ أثناء تحديث الصلاحية");
+    } finally {
+      setTogglingPermission(null);
+    }
+  };
+
+  const resetUserPermissions = async () => {
+    if (!selectedUser || !confirm("هل أنت متأكد من إعادة تعيين صلاحيات هذا المستخدم للافتراضي؟ سيتم مسح أي صلاحيات فردية.")) return;
+    setIsUpdating(true);
+    try {
+      const data = await fetchApi(`/permissions/users/${selectedUser.id}`, {
+        method: 'DELETE'
+      });
+      setUserPermissions(data.permissions);
+      toast.success("تم إعادة التعيين للوضع الافتراضي بنجاح");
+    } catch (err: any) {
+      toast.error(err.message || "حدث خطأ أثناء إعادة التعيين");
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 relative">
       
@@ -253,6 +306,15 @@ function AdminUsersPage() {
                         تعديل
                       </button>
                     )}
+                    {currentUser?.role === 'ADMIN' && ['EMPLOYEE', 'BRANCH_MANAGER'].includes(user.role) && (
+                      <button 
+                        onClick={() => openPermissionsModal(user)}
+                        className="flex-1 h-9 text-xs font-semibold bg-gold/10 text-gold hover:bg-gold hover:text-white transition-colors rounded-md flex items-center justify-center gap-2"
+                      >
+                        <Shield className="size-3.5" />
+                        صلاحيات
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -326,6 +388,15 @@ function AdminUsersPage() {
                               تعديل
                             </button>
                           )}
+                          {currentUser?.role === 'ADMIN' && ['EMPLOYEE', 'BRANCH_MANAGER'].includes(user.role) && (
+                            <button 
+                              onClick={() => openPermissionsModal(user)}
+                              className="text-xs px-3 py-1.5 inline-flex items-center gap-1.5 bg-gold/10 text-gold hover:bg-gold hover:text-white rounded-md transition-colors"
+                            >
+                              <Shield className="size-3" />
+                              صلاحيات
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -382,10 +453,10 @@ function AdminUsersPage() {
           <div className="relative bg-card w-full max-w-md rounded-2xl shadow-elegant border border-border overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="p-5 border-b border-border flex items-center justify-between bg-secondary/50">
               <h2 className="font-display font-bold text-lg flex items-center gap-2">
-                {modalMode === 'create' ? <Plus className="size-5 text-gold" /> : (modalMode === 'edit' ? <Edit className="size-5 text-gold" /> : <Users className="size-5 text-gold" />)}
-                {modalMode === 'create' ? 'إضافة عضو جديد' : (modalMode === 'edit' ? 'تعديل بيانات العضو' : 'تفاصيل العضو')}
+                {modalMode === 'create' ? <Plus className="size-5 text-gold" /> : (modalMode === 'edit' ? <Edit className="size-5 text-gold" /> : (modalMode === 'permissions' ? <Shield className="size-5 text-gold" /> : <Users className="size-5 text-gold" />))}
+                {modalMode === 'create' ? 'إضافة عضو جديد' : (modalMode === 'edit' ? 'تعديل بيانات العضو' : (modalMode === 'permissions' ? 'صلاحيات الاستثناء للمستخدم' : 'تفاصيل العضو'))}
               </h2>
-              <button onClick={() => { setSelectedUser(null); setModalMode('view'); }} className="p-1.5 hover:bg-black/5 rounded-md transition-colors">
+              <button onClick={() => { setSelectedUser(null); setModalMode('view'); setUserPermissions([]); }} className="p-1.5 hover:bg-black/5 rounded-md transition-colors">
                 <X className="size-5" />
               </button>
             </div>
@@ -493,6 +564,80 @@ function AdminUsersPage() {
                   )}
                 </div>
               </form>
+            ) : modalMode === 'permissions' && selectedUser ? (
+              <div className="p-0 max-h-[80vh] overflow-y-auto">
+                <div className="p-5 border-b border-border bg-secondary/30">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <div className="font-bold text-lg">{selectedUser.name}</div>
+                      <div className="text-sm text-muted-foreground flex items-center gap-2 mt-1">
+                        <span className="bg-secondary px-2 py-0.5 rounded-full text-xs font-semibold">{getRoleLabel(selectedUser.role)}</span>
+                        <span>تعديل الصلاحيات الفردية</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={resetUserPermissions}
+                      disabled={isUpdating || !userPermissions.some(p => p.source !== 'role' && p.source !== 'none')}
+                      className="text-xs flex items-center gap-1.5 bg-secondary hover:bg-border px-3 py-2 rounded-lg font-semibold transition-colors disabled:opacity-50"
+                    >
+                      <RefreshCcw className="size-3.5" />
+                      إعادة للافتراضي
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    الصلاحيات الخضراء <span className="inline-block w-2 h-2 rounded-full bg-green-500 mx-1"></span> موروثة من دور المستخدم الافتراضي. 
+                    الصلاحيات الذهبية <span className="inline-block w-2 h-2 rounded-full bg-gold mx-1"></span> هي صلاحيات إضافية أعطيت له بشكل فردي. 
+                    أما الصلاحيات المعطلة بلون رمادي <span className="inline-block w-2 h-2 rounded-full bg-secondary mx-1"></span> يمكن أن تعني أنها غير ممنوحة، أو سُحبت منه يدوياً.
+                  </p>
+                </div>
+                
+                {isUpdating && userPermissions.length === 0 ? (
+                  <div className="p-12 flex justify-center">
+                    <div className="size-8 border-2 border-gold border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-border/50">
+                    {userPermissions.map((perm) => (
+                      <div key={perm.permission} className="flex items-center justify-between p-4 hover:bg-secondary/20 transition-colors">
+                        <div>
+                          <div className="font-semibold text-sm">{perm.label}</div>
+                          <div className="text-xs mt-1 flex items-center gap-1">
+                            {perm.source === 'role' && <span className="text-green-500 font-medium bg-green-500/10 px-1.5 py-0.5 rounded">موروثة من الدور</span>}
+                            {perm.source === 'user_granted' && <span className="text-gold font-medium bg-gold/10 px-1.5 py-0.5 rounded">صلاحية فردية إضافية</span>}
+                            {perm.source === 'user_revoked' && <span className="text-red-400 font-medium bg-red-400/10 px-1.5 py-0.5 rounded">مسحوبة فردياً</span>}
+                            {perm.source === 'none' && <span className="text-muted-foreground font-medium bg-secondary px-1.5 py-0.5 rounded">غير ممنوحة</span>}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => toggleUserPermission(perm.permission, !perm.effective)}
+                          disabled={togglingPermission === perm.permission}
+                          className={`w-12 h-7 rounded-full relative transition-all duration-300 ${
+                            perm.effective
+                              ? (perm.source === 'user_granted' ? 'bg-gold shadow-md shadow-gold/20' : 'bg-green-500 shadow-md shadow-green-500/20')
+                              : 'bg-secondary border border-border'
+                          }`}
+                        >
+                          {togglingPermission === perm.permission ? (
+                            <Loader2 className="size-4 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-spin text-muted-foreground" />
+                          ) : (
+                            <span
+                              className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow-sm transition-all duration-300 flex items-center justify-center ${
+                                perm.effective ? 'right-1' : 'left-1'
+                              }`}
+                            >
+                              {perm.effective ? (
+                                <Check className={`size-3 ${perm.source === 'user_granted' ? 'text-gold' : 'text-green-500'}`} />
+                              ) : (
+                                <X className="size-3 text-muted-foreground" />
+                              )}
+                            </span>
+                          )}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             ) : selectedUser && (
               <div className="p-6 space-y-6">
                 <div className="flex flex-col items-center justify-center text-center">
