@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { fetchApi } from "../../lib/api";
-import { Plus, Edit, Trash2, MapPin, Phone, Settings2, X, Check, Users } from "lucide-react";
+import { Plus, Edit, Trash2, MapPin, Phone, Settings2, X, Check, Users, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import { SERVICES_DATA } from "../../lib/services-data";
 import { hasPermission, getUser, isBranchScoped } from "../../lib/permissions-helper";
@@ -16,6 +16,14 @@ type Region = {
   description: string;
   phoneNumbers: string;
   disabledServiceIds: number[];
+  whatsappInstanceId?: number | null;
+};
+
+type WhatsappInstance = {
+  id: number;
+  name: string;
+  status: string;
+  phoneNumber?: string | null;
 };
 
 function AdminRegionsPage() {
@@ -24,13 +32,22 @@ function AdminRegionsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRegion, setEditingRegion] = useState<Region | null>(null);
   
-  const [formData, setFormData] = useState<{name: string, description: string, phoneNumbers: string[]}>({ name: '', description: '', phoneNumbers: [''] });
+  const [formData, setFormData] = useState<{name: string, description: string, phoneNumbers: string[], whatsappInstanceId: string}>({ name: '', description: '', phoneNumbers: [''], whatsappInstanceId: '' });
   const [managingServicesRegion, setManagingServicesRegion] = useState<any | null>(null);
   const [disabledServices, setDisabledServices] = useState<number[]>([]);
+  const [whatsappInstances, setWhatsappInstances] = useState<WhatsappInstance[]>([]);
 
   useEffect(() => {
     loadRegions();
+    loadWhatsappInstances();
   }, []);
+
+  const loadWhatsappInstances = async () => {
+    try {
+      const data = await fetchApi('/whatsapp/instances');
+      setWhatsappInstances(data);
+    } catch {}
+  };
 
   const loadRegions = async () => {
     try {
@@ -53,7 +70,8 @@ function AdminRegionsPage() {
     try {
       const payload = {
         ...formData,
-        phoneNumbers: formData.phoneNumbers.filter(p => p.trim() !== '').join(', ')
+        phoneNumbers: formData.phoneNumbers.filter(p => p.trim() !== '').join(', '),
+        whatsappInstanceId: formData.whatsappInstanceId ? Number(formData.whatsappInstanceId) : null,
       };
       
       if (editingRegion) {
@@ -114,7 +132,7 @@ function AdminRegionsPage() {
           <button 
             onClick={() => {
               setEditingRegion(null);
-              setFormData({ name: '', description: '', phoneNumbers: [''] });
+              setFormData({ name: '', description: '', phoneNumbers: [''], whatsappInstanceId: '' });
               setIsModalOpen(true);
             }}
             className="btn-primary"
@@ -147,7 +165,8 @@ function AdminRegionsPage() {
                       setFormData({ 
                         name: region.name, 
                         description: region.description || '', 
-                        phoneNumbers: region.phoneNumbers ? region.phoneNumbers.split(',').map((p: string) => p.trim()) : [''] 
+                        phoneNumbers: region.phoneNumbers ? region.phoneNumbers.split(',').map((p: string) => p.trim()) : [''],
+                        whatsappInstanceId: region.whatsappInstanceId ? String(region.whatsappInstanceId) : '',
                       }); 
                       setIsModalOpen(true); 
                     }} className="p-1.5 text-muted-foreground hover:text-primary transition-colors bg-secondary rounded-md"><Edit className="size-4" /></button>
@@ -161,9 +180,25 @@ function AdminRegionsPage() {
               {region.description && <p className="text-sm text-muted-foreground mb-4 line-clamp-2">{region.description}</p>}
               
               {region.phoneNumbers && (
-                <div className="flex items-center gap-2 text-sm text-foreground mb-6 font-medium">
+                <div className="flex items-center gap-2 text-sm text-foreground mb-3 font-medium">
                   <Phone className="size-4 text-muted-foreground" />
                   <span dir="ltr">{region.phoneNumbers}</span>
+                </div>
+              )}
+
+              {/* WhatsApp badge */}
+              {(region as any).whatsappInstance ? (
+                <div className="flex items-center gap-2 text-xs font-semibold text-green-600 bg-green-500/10 border border-green-500/20 px-3 py-1.5 rounded-lg mb-4">
+                  <MessageCircle className="size-3.5" />
+                  <span>واتساب: {(region as any).whatsappInstance.name}</span>
+                  {(region as any).whatsappInstance.phoneNumber && (
+                    <span className="opacity-70" dir="ltr">· +{(region as any).whatsappInstance.phoneNumber}</span>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground mb-4">
+                  <MessageCircle className="size-3.5" />
+                  <span>لا يوجد رقم واتساب مخصص</span>
                 </div>
               )}
 
@@ -245,6 +280,22 @@ function AdminRegionsPage() {
                 >
                   <Plus className="size-4" /> إضافة رقم آخر
                 </button>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold mb-1.5">رقم واتساب الفرع (اختياري)</label>
+                <select
+                  value={formData.whatsappInstanceId}
+                  onChange={e => setFormData({...formData, whatsappInstanceId: e.target.value})}
+                  className="input-field"
+                >
+                  <option value="">-- بدون رقم مخصص (يستخدم أول رقم متصل) --</option>
+                  {whatsappInstances.map(inst => (
+                    <option key={inst.id} value={inst.id}>
+                      {inst.name} {inst.phoneNumber ? `(+${inst.phoneNumber})` : ''} — {inst.status === 'CONNECTED' ? '✅ متصل' : '⚠️ غير متصل'}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground mt-1">سيتم إرسال إشعارات هذا الفرع من هذا الرقم</p>
               </div>
               <div className="pt-4 flex gap-3">
                 <button type="submit" className="btn-primary flex-1">حفظ البيانات</button>
